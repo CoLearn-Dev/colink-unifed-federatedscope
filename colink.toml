@@ -1,18 +1,18 @@
 [package]
-name = "unifed-example"
+name = "unifed-federatedscope"
 version = "0.0.0"
 keywords = ["federated learning", "machine learning"]
-description = "Example UniFed protocol."
+description = "Integrating FederatedScope framework into UniFed as a CoLink protocol."
 language = "python"
 install_script = """
-if { conda env list | grep 'colink-protocol-unifed-example'; } >/dev/null 2>&1; then
-    conda env remove -n colink-protocol-unifed-example
+if { conda env list | grep 'colink-protocol-unifed-federatedscope'; } >/dev/null 2>&1; then
+    conda env remove -n colink-protocol-unifed-federatedscope
 fi
-conda create -n colink-protocol-unifed-example python=3.9 -y
-conda activate colink-protocol-unifed-example
+conda create -n colink-protocol-unifed-federatedscope python=3.9 -y
+conda activate colink-protocol-unifed-federatedscope
 pip install .
 """
 entrypoint = """
-conda activate colink-protocol-unifed-example
-unifed-example
+conda activate colink-protocol-unifed-federatedscope
+unifed-federatedscope
 """

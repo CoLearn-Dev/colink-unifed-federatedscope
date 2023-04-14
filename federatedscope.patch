@@ -1,0 +1,1262 @@
+diff --git a/doc/make.bat b/doc/make.bat
+index 7e5fc24..3b73827 100644
+--- a/doc/make.bat
++++ b/doc/make.bat
+@@ -1,50 +1,50 @@
+-:: Copyright 2017 The Ray Authors.
+-:: 
+-:: Licensed under the Apache License, Version 2.0 (the "License");
+-:: 
+-:: you may not use this file except in compliance with the License.
+-:: You may obtain a copy of the License at
+-:: 
+-::     https://www.apache.org/licenses/LICENSE-2.0
+-:: 
+-:: Unless required by applicable law or agreed to in writing, software
+-:: distributed under the License is distributed on an "AS IS" BASIS,
+-:: WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-:: See the License for the specific language governing permissions and
+-:: limitations under the License.
+-
+-@ECHO OFF
+-
+-pushd %~dp0
+-
+-REM Command file for Sphinx documentation
+-
+-if "%SPHINXBUILD%" == "" (
+-	set SPHINXBUILD=sphinx-build
+-)
+-set SOURCEDIR=source
+-set BUILDDIR=build
+-
+-if "%1" == "" goto help
+-
+-%SPHINXBUILD% >NUL 2>NUL
+-if errorlevel 9009 (
+-	echo.
+-	echo.The 'sphinx-build' command was not found. Make sure you have Sphinx
+-	echo.installed, then set the SPHINXBUILD environment variable to point
+-	echo.to the full path of the 'sphinx-build' executable. Alternatively you
+-	echo.may add the Sphinx directory to PATH.
+-	echo.
+-	echo.If you don't have Sphinx installed, grab it from
+-	echo.http://sphinx-doc.org/
+-	exit /b 1
+-)
+-
+-%SPHINXBUILD% -M %1 %SOURCEDIR% %BUILDDIR% %SPHINXOPTS% %O%
+-goto end
+-
+-:help
+-%SPHINXBUILD% -M help %SOURCEDIR% %BUILDDIR% %SPHINXOPTS% %O%
+-
+-:end
+-popd
++:: Copyright 2017 The Ray Authors.
++:: 
++:: Licensed under the Apache License, Version 2.0 (the "License");
++:: 
++:: you may not use this file except in compliance with the License.
++:: You may obtain a copy of the License at
++:: 
++::     https://www.apache.org/licenses/LICENSE-2.0
++:: 
++:: Unless required by applicable law or agreed to in writing, software
++:: distributed under the License is distributed on an "AS IS" BASIS,
++:: WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++:: See the License for the specific language governing permissions and
++:: limitations under the License.
++
++@ECHO OFF
++
++pushd %~dp0
++
++REM Command file for Sphinx documentation
++
++if "%SPHINXBUILD%" == "" (
++	set SPHINXBUILD=sphinx-build
++)
++set SOURCEDIR=source
++set BUILDDIR=build
++
++if "%1" == "" goto help
++
++%SPHINXBUILD% >NUL 2>NUL
++if errorlevel 9009 (
++	echo.
++	echo.The 'sphinx-build' command was not found. Make sure you have Sphinx
++	echo.installed, then set the SPHINXBUILD environment variable to point
++	echo.to the full path of the 'sphinx-build' executable. Alternatively you
++	echo.may add the Sphinx directory to PATH.
++	echo.
++	echo.If you don't have Sphinx installed, grab it from
++	echo.http://sphinx-doc.org/
++	exit /b 1
++)
++
++%SPHINXBUILD% -M %1 %SOURCEDIR% %BUILDDIR% %SPHINXOPTS% %O%
++goto end
++
++:help
++%SPHINXBUILD% -M help %SOURCEDIR% %BUILDDIR% %SPHINXOPTS% %O%
++
++:end
++popd
+diff --git a/federatedscope/contrib/data/load_from_files.py b/federatedscope/contrib/data/load_from_files.py
+index 304ad8a..38b286a 100644
+--- a/federatedscope/contrib/data/load_from_files.py
++++ b/federatedscope/contrib/data/load_from_files.py
+@@ -1,21 +1,96 @@
+ import os
+ import pickle
++import json
++import glob
++import numpy as np
++import pandas as pd
++import torch
++from torch.utils.data import TensorDataset, DataLoader
++import cv2
++import base64
+ 
+ from federatedscope.register import register_data
+ from federatedscope.core.data.utils import convert_data_mode
+ from federatedscope.core.auxiliaries.utils import setup_seed
+ 
+ 
++ext_config = json.load(open('config.json', 'r'))
++
++def load_data(client_idx):
++    if ext_config['dataset'] == 'femnist' or ext_config['dataset'] == 'celeba':
++        x = {}
++        y = {}
++        x["train"] = []
++        x["test"] = []
++        y["train"] = []
++        y["test"] = []
++        for dir_path in ["train", "test"]:
++            data_paths = sorted(glob.glob(f'../csv_data/{ext_config["dataset"]}_{dir_path}/*.csv'))
++            if dir_path == 'train':
++                data_paths = data_paths[client_idx-1:client_idx]
++            for data_path in data_paths:
++                data = pd.read_csv(data_path, sep=',')
++                if ext_config['dataset'] == 'celeba':
++                    X = data.iloc[:, 1].to_list()
++                    for i in range(len(X)):
++                        img_data = base64.b64decode(X[i])
++                        img_uint8 = np.asarray(bytearray(img_data), dtype='uint8')
++                        img_bgr = cv2.imdecode(img_uint8, cv2.IMREAD_COLOR)
++                        X[i] = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).transpose(2, 0, 1).reshape(-1)
++                    x[dir_path].append(np.array(X).astype(np.float32))
++                else:
++                    x[dir_path].append(np.array(data.iloc[:, 1:]).astype(np.float32))
++                y[dir_path].append(np.array(data.iloc[:, 0]).astype(np.int32))
++        train_X = x["train"][0]
++        train_y = y["train"][0]
++        test_X = np.concatenate(x["test"], axis=0)
++        test_y = np.concatenate(y["test"], axis=0)
++    else:
++        client_name = 'guest' if client_idx == 1 else 'host'
++        if ext_config['dataset'] == 'default_credit_horizontal' and client_idx == 2:
++            client_name += '_1'
++        train_data = pd.read_csv(f'../csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_{client_name}.csv', sep=',')
++        if ext_config["dataset"] == 'vehicle_scale_horizontal':
++            train_X = np.array(train_data.iloc[:, 2:]).astype(np.float32)
++            train_y = np.array(train_data.y).astype(np.int32)
++            test_data = pd.read_csv(f'../csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_guest.csv', sep=',')
++            test_X = np.array(test_data.iloc[:, 2:]).astype(np.float32)
++            test_y = np.array(test_data.y).astype(np.int32)
++            test_data = pd.read_csv(f'../csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_host.csv', sep=',')
++            test_X = np.concatenate((test_X, np.array(test_data.iloc[:, 2:]).astype(np.float32)), axis=0)
++            test_y = np.concatenate((test_y, np.array(test_data.y).astype(np.int32)), axis=0)
++        else:
++            test_data = pd.read_csv(f'../csv_data/{ext_config["dataset"]}_test/{ext_config["dataset"].replace("horizontal", "homo")}_test.csv', sep=',')
++            if ext_config['dataset'] == 'student_horizontal':
++                train_X = np.array(pd.concat([train_data.iloc[:, 9:], train_data.iloc[:, 1:8]], axis=1)).astype(np.float32)
++                train_y = np.array(train_data.y).astype(np.float32).reshape(-1, 1)
++                test_X = np.array(pd.concat([test_data.iloc[:, 9:], test_data.iloc[:, 1:8]], axis=1)).astype(np.float32)
++                test_y = np.array(test_data.y).astype(np.float32).reshape(-1, 1)
++            else:
++                train_X = np.array(train_data.iloc[:, 2:]).astype(np.float32)
++                train_y = np.array(train_data.y).astype(np.int32)
++                test_X = np.array(test_data.iloc[:, 2:]).astype(np.float32)
++                test_y = np.array(test_data.y).astype(np.int32)
++
++    """Load dataset (training and test set)."""
++    if ext_config['dataset'] == 'student_horizontal':
++        trainset = TensorDataset(torch.Tensor(train_X), torch.Tensor(train_y))
++        testset = TensorDataset(torch.Tensor(test_X), torch.Tensor(test_y))
++    else:
++        trainset = TensorDataset(torch.Tensor(train_X), torch.Tensor(train_y).long())
++        testset = TensorDataset(torch.Tensor(test_X), torch.Tensor(test_y).long())
++    return DataLoader(trainset, batch_size=ext_config['training_param']['batch_size'], shuffle=True), DataLoader(testset, batch_size=test_y.shape[0])
++
+ def load_data_from_file(config, client_cfgs=None):
+     from federatedscope.core.data import DummyDataTranslator
+ 
+-    file_path = config.data.file_path
++    # file_path = config.data.file_path
+ 
+-    if not os.path.exists(file_path):
+-        raise ValueError(f'The file {file_path} does not exist.')
++    # if not os.path.exists(file_path):
++    #     raise ValueError(f'The file {file_path} does not exist.')
+ 
+-    with open(file_path, 'br') as file:
+-        data = pickle.load(file)
++    # with open(file_path, 'br') as file:
++    #     data = pickle.load(file)
+     # The shape of data is expected to be:
+     # (1) the data consist of all participants' data:
+     # {
+@@ -36,7 +111,10 @@ def load_data_from_file(config, client_cfgs=None):
+     # data = translator(data)
+ 
+     # Convert `StandaloneDataDict` to `ClientData` when in distribute mode
+-    data = convert_data_mode(data, config)
++    # data = convert_data_mode(data, config)
++    client_idx = config.distribute.data_idx
++    trainloader, testloader = load_data(client_idx)
++    data = {'train': trainloader, 'test': testloader}
+ 
+     # Restore the user-specified seed after the data generation
+     setup_seed(config.seed)
+diff --git a/federatedscope/contrib/model/example.py b/federatedscope/contrib/model/example.py
+index 899246a..f8b32f3 100644
+--- a/federatedscope/contrib/model/example.py
++++ b/federatedscope/contrib/model/example.py
+@@ -1,15 +1,46 @@
+ from federatedscope.register import register_model
++import json
++import torch
++import torch.nn as nn
++import torch.nn.functional as F
++from torchvision import transforms
+ 
++ext_config = json.load(open('config.json', 'r'))
+ 
+ # Build you torch or tf model class here
+-class MyNet(object):
+-    pass
++class LeNet(torch.nn.Module):
++    def __init__(self, inplanes, input_len, num_class, celeba=False):
++        super(LeNet, self).__init__()
++        self.inplanes = inplanes
++        self.input_len = input_len
++        self.celeba = celeba
++        self.crop = transforms.CenterCrop((178, 178))
++        self.resize = transforms.Resize((28, 28))
++        self.conv1 = nn.Conv2d(inplanes, 6, 5, padding=2, padding_mode='reflect')
++        self.pool = nn.MaxPool2d(2, 2)
++        self.conv2 = nn.Conv2d(6, 16, 5)
++        self.fc1 = nn.Linear(16 * 5 * 5, 120)
++        self.fc2 = nn.Linear(120, 84)
++        self.fc3 = nn.Linear(84, num_class)
++
++    def forward(self, x):
++        x = x.reshape(-1, self.inplanes, self.input_len[0], self.input_len[1])
++        if self.celeba:
++            x = self.resize(self.crop(x))
++        x = self.pool(F.relu(self.conv1(x)))
++        x = self.pool(F.relu(self.conv2(x)))
++        x = torch.flatten(x, 1)
++        x = F.relu(self.fc1(x))
++        x = F.relu(self.fc2(x))
++        x = self.fc3(x)
++        return x
+ 
+ 
+ # Instantiate your model class with config and data
+ def ModelBuilder(model_config, local_data):
+-
+-    model = MyNet()
++    celeba = True if ext_config['dataset'] == 'celeba' else False
++    inplanes = 3 if celeba else 1
++    model = LeNet(inplanes, tuple(model_config.input_shape), int(model_config.out_channels), celeba)
+ 
+     return model
+ 
+diff --git a/federatedscope/core/auxiliaries/data_builder.py b/federatedscope/core/auxiliaries/data_builder.py
+index cddabef..25449d5 100644
+--- a/federatedscope/core/auxiliaries/data_builder.py
++++ b/federatedscope/core/auxiliaries/data_builder.py
+@@ -127,10 +127,13 @@ def get_data(config, client_cfgs=None):
+     # Apply translator to non-FL dataset to transform it into its federated
+     # counterpart
+     if dataset is not None:
+-        translator = getattr(import_module('federatedscope.core.data'),
+-                             DATA_TRANS_MAP[config.data.type.lower()])(
+-                                 modified_config, client_cfgs)
+-        data = translator(dataset)
++        if config.data.type.lower() == 'synthetic_vfl_data':
++            data = dataset
++        else:
++            translator = getattr(import_module('federatedscope.core.data'),
++                                DATA_TRANS_MAP[config.data.type.lower()])(
++                                    modified_config, client_cfgs)
++            data = translator(dataset)
+ 
+         # Convert `StandaloneDataDict` to `ClientData` when in distribute mode
+         data = convert_data_mode(data, modified_config)
+diff --git a/federatedscope/core/auxiliaries/model_builder.py b/federatedscope/core/auxiliaries/model_builder.py
+index a1d5800..791cf82 100644
+--- a/federatedscope/core/auxiliaries/model_builder.py
++++ b/federatedscope/core/auxiliaries/model_builder.py
+@@ -124,10 +124,10 @@ def get_model(model_config, local_data=None, backend='torch'):
+     """
+     if model_config.type.lower() in ['xgb_tree', 'gbdt_tree', 'random_forest']:
+         input_shape = None
+-    elif local_data is not None:
+-        input_shape = get_shape_from_data(local_data, model_config, backend)
+-    else:
++    elif model_config.input_shape is not None and len(model_config.input_shape) > 0:
+         input_shape = model_config.input_shape
++    else:
++        input_shape = get_shape_from_data(local_data, model_config, backend)
+ 
+     if input_shape is None:
+         logger.warning('The input shape is None. Please specify the '
+@@ -156,7 +156,7 @@ def get_model(model_config, local_data=None, backend='torch'):
+         from federatedscope.core.mlp import MLP
+         model = MLP(channel_list=[input_shape[-1]] + [model_config.hidden] *
+                     (model_config.layer - 1) + [model_config.out_channels],
+-                    dropout=model_config.dropout)
++                    batch_norm=False, dropout=model_config.dropout)
+ 
+     elif model_config.type.lower() == 'quadratic':
+         from federatedscope.tabular.model import QuadraticModel
+diff --git a/federatedscope/core/auxiliaries/trainer_builder.py b/federatedscope/core/auxiliaries/trainer_builder.py
+index b32baf7..038ea5f 100644
+--- a/federatedscope/core/auxiliaries/trainer_builder.py
++++ b/federatedscope/core/auxiliaries/trainer_builder.py
+@@ -38,7 +38,8 @@ def get_trainer(model=None,
+                 config=None,
+                 only_for_eval=False,
+                 is_attacker=False,
+-                monitor=None):
++                monitor=None,
++                logger=None):
+     """
+     This function builds an instance of trainer.
+ 
+@@ -116,7 +117,8 @@ def get_trainer(model=None,
+                                           device=device,
+                                           config=config,
+                                           only_for_eval=only_for_eval,
+-                                          monitor=monitor)
++                                          monitor=monitor,
++                                          logger=logger)
+         elif config.backend == 'tensorflow':
+             from federatedscope.core.trainers import GeneralTFTrainer
+             trainer = GeneralTFTrainer(model=model,
+diff --git a/federatedscope/core/fed_runner.py b/federatedscope/core/fed_runner.py
+index 3c9b046..1949a9c 100644
+--- a/federatedscope/core/fed_runner.py
++++ b/federatedscope/core/fed_runner.py
+@@ -396,6 +396,11 @@ class StandaloneRunner(BaseRunner):
+             self._run_simulation()
+         # TODO: avoid using private attr
+         self.server._monitor.finish_fed_runner(fl_mode=self.mode)
++
++        if self.cfg.vertical.use:
++            for each_client in self.client:
++                self.client[each_client].terminate_logger()
++
+         return self.server.best_results
+ 
+     def _handle_msg(self, msg, rcv=-1):
+@@ -529,7 +534,7 @@ class DistributedRunner(BaseRunner):
+                 'host': self.cfg.distribute.client_host,
+                 'port': self.cfg.distribute.client_port
+             }
+-            self.client = self._setup_client(resource_info=sampled_resource)
++            self.client = self._setup_client(client_id=self.cfg.distribute.data_idx, resource_info=sampled_resource)
+ 
+     def _get_server_args(self, resource_info, client_resource_info):
+         server_data = self.data
+@@ -743,6 +748,10 @@ class FedRunner(object):
+ 
+             self.server._monitor.finish_fed_runner(fl_mode=self.mode)
+ 
++            if self.cfg.vertical.use:
++                for each_client in self.client:
++                    self.client[each_client].terminate_logger()
++
+             return self.server.best_results
+ 
+         elif self.mode == 'distributed':
+diff --git a/federatedscope/core/lr.py b/federatedscope/core/lr.py
+index 16e8462..e64fe26 100644
+--- a/federatedscope/core/lr.py
++++ b/federatedscope/core/lr.py
+@@ -1,5 +1,5 @@
+ import torch
+-
++import torch.nn.functional as F
+ 
+ class LogisticRegression(torch.nn.Module):
+     def __init__(self, in_channels, class_num, use_bias=True):
+@@ -7,4 +7,4 @@ class LogisticRegression(torch.nn.Module):
+         self.fc = torch.nn.Linear(in_channels, class_num, bias=use_bias)
+ 
+     def forward(self, x):
+-        return self.fc(x)
++        return F.sigmoid(self.fc(x))
+diff --git a/federatedscope/core/mlp.py b/federatedscope/core/mlp.py
+index a71b76e..19318b7 100644
+--- a/federatedscope/core/mlp.py
++++ b/federatedscope/core/mlp.py
+@@ -16,25 +16,14 @@ class MLP(torch.nn.Module):
+         super().__init__()
+         assert len(channel_list) >= 2
+         self.channel_list = channel_list
+-        self.dropout = dropout
+-        self.relu_first = relu_first
+-
+         self.linears = ModuleList()
+-        self.norms = ModuleList()
+         for in_channel, out_channel in zip(channel_list[:-1],
+                                            channel_list[1:]):
+             self.linears.append(Linear(in_channel, out_channel))
+-            self.norms.append(
+-                BatchNorm1d(out_channel) if batch_norm else Identity())
+ 
+     def forward(self, x):
+         x = self.linears[0](x)
+-        for layer, norm in zip(self.linears[1:], self.norms[:-1]):
+-            if self.relu_first:
+-                x = F.relu(x)
+-            x = norm(x)
+-            if not self.relu_first:
+-                x = F.relu(x)
+-            x = F.dropout(x, p=self.dropout, training=self.training)
++        for layer in self.linears[1:]:
++            x = F.relu(x)
+             x = layer.forward(x)
+         return x
+diff --git a/federatedscope/core/monitors/metric_calculator.py b/federatedscope/core/monitors/metric_calculator.py
+index 1a65bb5..bc609b2 100644
+--- a/federatedscope/core/monitors/metric_calculator.py
++++ b/federatedscope/core/monitors/metric_calculator.py
+@@ -226,23 +226,14 @@ def eval_hits(y_true, y_prob, metric, **kwargs):
+ 
+ 
+ def eval_roc_auc(y_true, y_prob, **kwargs):
+-    rocauc_list = []
+-
+-    for i in range(y_true.shape[1]):
+-        # AUC is only defined when there is at least one positive data.
+-        if np.sum(y_true[:, i] == 1) > 0 and np.sum(y_true[:, i] == 0) > 0:
+-            # ignore nan values
+-            is_labeled = y_true[:, i] == y_true[:, i]
+-            # TODO: handle missing label classes
+-            rocauc_list.append(
+-                roc_auc_score(y_true[is_labeled, i],
+-                              softmax(y_prob[is_labeled, :, i], axis=-1),
+-                              multi_class='ovr'))
+-    if len(rocauc_list) == 0:
+-        logger.warning('No positively labeled data available.')
+-        return 0.5
+-
+-    return sum(rocauc_list) / len(rocauc_list)
++    labels = y_true.reshape(-1).tolist()
++    logits = y_prob[:, 1].reshape(-1).tolist()
++    try:
++        auc = roc_auc_score(y_true=labels, y_score=logits)
++    except:
++        auc = 0
++
++    return auc
+ 
+ 
+ def eval_rmse(y_true, y_prob, **kwargs):
+diff --git a/federatedscope/core/secret_sharing/__init__.py b/federatedscope/core/secret_sharing/__init__.py
+index 1cbf8b5..3261af9 100644
+--- a/federatedscope/core/secret_sharing/__init__.py
++++ b/federatedscope/core/secret_sharing/__init__.py
+@@ -1,2 +1,2 @@
+-from federatedscope.core.secret_sharing.secret_sharing import \
+-    AdditiveSecretSharing
++from federatedscope.core.secret_sharing.secret_sharing import \
++    AdditiveSecretSharing
+diff --git a/federatedscope/core/trainers/torch_trainer.py b/federatedscope/core/trainers/torch_trainer.py
+index fd5a72c..1eccf34 100644
+--- a/federatedscope/core/trainers/torch_trainer.py
++++ b/federatedscope/core/trainers/torch_trainer.py
+@@ -1,4 +1,5 @@
+ import os
++import json
+ import logging
+ 
+ import numpy as np
+@@ -24,7 +25,7 @@ from federatedscope.core.auxiliaries.utils import param2tensor, \
+ from federatedscope.core.monitors.monitor import Monitor
+ 
+ logger = logging.getLogger(__name__)
+-
++ext_config = json.load(open('config.json', 'r'))
+ 
+ class GeneralTorchTrainer(Trainer):
+     def get_model_para(self):
+@@ -404,6 +405,14 @@ class GeneralTorchTrainer(Trainer):
+         ctx.ys_true = CtxVar(np.concatenate(ctx.ys_true), LIFECYCLE.ROUTINE)
+         ctx.ys_prob = CtxVar(np.concatenate(ctx.ys_prob), LIFECYCLE.ROUTINE)
+         results = ctx.monitor.eval(ctx)
++        if ctx.cur_split == 'test':
++            self.logger.training_end()
++            with self.logger.model_evaluation() as e:
++                metric = 'mse' if ext_config['dataset'] == 'student_horizontal' else ('acc' if ext_config['dataset'] == 'femnist' or ext_config['dataset'] == 'celeba' or ext_config['dataset'] == 'vehicle_scale_horizontal' else 'roc_auc')
++                target_metric = 'mse' if ext_config['dataset'] == 'student_horizontal' else ('accuracy' if ext_config['dataset'] == 'femnist' or ext_config['dataset'] == 'celeba' or ext_config['dataset'] == 'vehicle_scale_horizontal' else 'auc')
++                e.report_metric(target_metric, float(results[f'test_{metric}']))
++                e.report_metric('loss', float(results['test_avg_loss']))
++            self.logger.end()
+         setattr(ctx, 'eval_metrics', results)
+ 
+     def save_model(self, path, cur_round=-1):
+diff --git a/federatedscope/core/trainers/trainer.py b/federatedscope/core/trainers/trainer.py
+index 689f64a..fe5a2c4 100644
+--- a/federatedscope/core/trainers/trainer.py
++++ b/federatedscope/core/trainers/trainer.py
+@@ -1,7 +1,7 @@
+ import collections
+ import copy
+ import logging
+-
++import flbenchmark.logging
+ from federatedscope.core.trainers.base_trainer import BaseTrainer
+ from federatedscope.core.trainers.enums import MODE, LIFECYCLE
+ from federatedscope.core.auxiliaries.decorators import use_diff
+@@ -28,7 +28,8 @@ class Trainer(BaseTrainer):
+                  device,
+                  config,
+                  only_for_eval=False,
+-                 monitor=None):
++                 monitor=None,
++                 logger=None):
+         self._cfg = config
+ 
+         self.ctx = Context(model, self.cfg, data, device)
+@@ -69,6 +70,8 @@ class Trainer(BaseTrainer):
+             # in standalone mode, by default, we print the trainer info only
+             # once for better logs readability
+             pass
++        self.logger = logger
++        self.epoch = 0
+ 
+     @property
+     def cfg(self):
+@@ -271,7 +274,10 @@ class Trainer(BaseTrainer):
+         for hook in hooks_set["on_fit_start"]:
+             hook(self.ctx)
+ 
+-        self._run_epoch(hooks_set)
++        if mode == MODE.TRAIN and self.epoch == 0:
++            self.logger.training_start()
++        self._run_epoch(mode, hooks_set)
++        self.epoch += 1
+ 
+         for hook in hooks_set["on_fit_end"]:
+             hook(self.ctx)
+@@ -279,7 +285,9 @@ class Trainer(BaseTrainer):
+         return self.ctx.num_samples
+ 
+     @lifecycle(LIFECYCLE.EPOCH)
+-    def _run_epoch(self, hooks_set):
++    def _run_epoch(self, mode, hooks_set):
++        if mode == MODE.TRAIN:
++            self.logger.training_round_start()
+         for epoch_i in range(
+                 getattr(self.ctx, f"num_{self.ctx.cur_split}_epoch")):
+             self.ctx.cur_epoch_i = CtxVar(epoch_i, "epoch")
+@@ -287,10 +295,16 @@ class Trainer(BaseTrainer):
+             for hook in hooks_set["on_epoch_start"]:
+                 hook(self.ctx)
+ 
++            if mode == MODE.TRAIN:
++                self.logger.computation_start()
+             self._run_batch(hooks_set)
++            if mode == MODE.TRAIN:
++                self.logger.computation_end()
+ 
+             for hook in hooks_set["on_epoch_end"]:
+                 hook(self.ctx)
++        if mode == MODE.TRAIN:
++            self.logger.training_round_end()
+ 
+     @lifecycle(LIFECYCLE.BATCH)
+     def _run_batch(self, hooks_set):
+diff --git a/federatedscope/core/workers/client.py b/federatedscope/core/workers/client.py
+index 455a12f..44db46c 100644
+--- a/federatedscope/core/workers/client.py
++++ b/federatedscope/core/workers/client.py
+@@ -2,7 +2,7 @@ import copy
+ import logging
+ import sys
+ import pickle
+-
++import flbenchmark.logging
+ from federatedscope.core.message import Message
+ from federatedscope.core.communication import StandaloneCommManager, \
+     StandaloneDDPCommManager, gRPCCommManager
+@@ -101,6 +101,8 @@ class Client(BaseClient):
+             config.attack.attack_method != '' and \
+             config.federate.mode == 'standalone'
+ 
++        self.logger = flbenchmark.logging.BasicLogger(id=ID, agent_type='client')
++
+         # Build Trainer
+         # trainer might need configurations other than those of trainer node
+         self.trainer = get_trainer(model=model,
+@@ -108,7 +110,8 @@ class Client(BaseClient):
+                                    device=device,
+                                    config=self._cfg,
+                                    is_attacker=self.is_attacker,
+-                                   monitor=self._monitor)
++                                   monitor=self._monitor,
++                                   logger=self.logger)
+         self.device = device
+ 
+         # For client-side evaluation
+@@ -221,6 +224,9 @@ class Client(BaseClient):
+                     receiver=[self.server_id],
+                     timestamp=0,
+                     content=self.local_address))
++        
++        if self._cfg.vertical.use:
++            self.logger.training_start()
+ 
+     def run(self):
+         """
+@@ -426,15 +432,17 @@ class Client(BaseClient):
+                         shared_model_para = symmetric_uniform_quantization(
+                             shared_model_para, nbits)
+ 
+-                self.comm_manager.send(
+-                    Message(msg_type='model_para',
++                self.logger.communication_start(target_id=-1)
++                client_message = Message(msg_type='model_para',
+                             sender=self.ID,
+                             receiver=[sender],
+                             state=self.state,
+                             timestamp=self._gen_timestamp(
+                                 init_timestamp=timestamp,
+                                 instance_number=sample_size),
+-                            content=(sample_size, shared_model_para)))
++                            content=(sample_size, shared_model_para))
++                self.comm_manager.send(client_message)
++                self.logger.communication_end(metrics={'byte': client_message.count_bytes()[1]})
+ 
+     def callback_funcs_for_assign_id(self, message: Message):
+         """
+@@ -589,6 +597,10 @@ class Client(BaseClient):
+             message: The received message
+         """
+         self._monitor.global_converged()
++    
++    def terminate_logger(self):
++        self.logger.training_end()
++        self.logger.end()
+ 
+     @classmethod
+     def get_msg_handler_dict(cls):
+diff --git a/federatedscope/core/workers/server.py b/federatedscope/core/workers/server.py
+index 65ef0ff..e5e5815 100644
+--- a/federatedscope/core/workers/server.py
++++ b/federatedscope/core/workers/server.py
+@@ -2,7 +2,7 @@ import logging
+ import copy
+ import os
+ import sys
+-
++import flbenchmark.logging
+ import numpy as np
+ import pickle
+ import time
+@@ -220,6 +220,8 @@ class Server(BaseServer):
+         # inject noise before broadcast
+         self._noise_injector = None
+ 
++        self.logger = flbenchmark.logging.BasicLogger(id=0, agent_type='aggregator')
++
+     @property
+     def client_num(self):
+         return self._client_num
+@@ -332,7 +334,8 @@ class Server(BaseServer):
+         if self.check_buffer(self.state, min_received_num, check_eval_result):
+             if not check_eval_result:
+                 # Receiving enough feedback in the training process
+-                aggregated_num = self._perform_federated_aggregation()
++                with self.logger.computation() as c:
++                    aggregated_num = self._perform_federated_aggregation()
+                 self.state += 1
+                 if self.state % self._cfg.eval.freq == 0 and self.state != \
+                         self.total_round_num:
+@@ -342,6 +345,7 @@ class Server(BaseServer):
+                     self.eval()
+ 
+                 if self.state < self.total_round_num:
++                    self.logger.training_round_end()
+                     # Move to next round of training
+                     logger.info(
+                         f'----------- Starting a new training round (Round '
+@@ -351,12 +355,16 @@ class Server(BaseServer):
+                     self.msg_buffer['train'][self.state] = dict()
+                     self.staled_msg_buffer.clear()
+                     # Start a new training round
++                    self.logger.training_round_start()
+                     self._start_new_training_round(aggregated_num)
+                 else:
+                     # Final Evaluate
++                    self.logger.training_round_end()
+                     logger.info('Server: Training is finished! Starting '
+                                 'evaluation.')
++                    self.logger.training_end()
+                     self.eval()
++                    self.logger.end()
+ 
+             else:
+                 # Receiving enough feedback in the evaluation process
+@@ -684,13 +692,15 @@ class Server(BaseServer):
+         # We define the evaluation happens at the end of an epoch
+         rnd = self.state - 1 if msg_type == 'evaluate' else self.state
+ 
+-        self.comm_manager.send(
+-            Message(msg_type=msg_type,
++        self.logger.communication_start(target_id=-1)
++        server_message = Message(msg_type=msg_type,
+                     sender=self.ID,
+                     receiver=receiver,
+                     state=min(rnd, self.total_round_num),
+                     timestamp=self.cur_timestamp,
+-                    content=model_para))
++                    content=model_para)
++        self.comm_manager.send(server_message)
++        self.logger.communication_end(metrics={'byte': server_message.count_bytes()[1]})
+         if self._cfg.federate.online_aggr:
+             for idx in range(self.model_num):
+                 self.aggregators[idx].reset()
+@@ -830,6 +840,8 @@ class Server(BaseServer):
+             logger.info(
+                 '----------- Starting training (Round #{:d}) -------------'.
+                 format(self.state))
++            self.logger.training_start()
++            self.logger.training_round_start()
+ 
+     def trigger_for_feat_engr(self,
+                               trigger_train_func,
+diff --git a/federatedscope/gfl/loss/vat.py b/federatedscope/gfl/loss/vat.py
+index eccd57a..88c9af7 100644
+--- a/federatedscope/gfl/loss/vat.py
++++ b/federatedscope/gfl/loss/vat.py
+@@ -1,90 +1,90 @@
+-import contextlib
+-import torch
+-import torch.nn as nn
+-import torch.nn.functional as F
+-from torch_geometric.data.batch import Batch
+-
+-
+-@contextlib.contextmanager
+-def _disable_tracking_bn_stats(model):
+-    def switch_attr(m):
+-        if hasattr(m, 'track_running_stats'):
+-            m.track_running_stats ^= True
+-
+-    model.apply(switch_attr)
+-    yield
+-    model.apply(switch_attr)
+-
+-
+-def _l2_normalize(d):
+-    d_reshaped = d.view(d.shape[0], -1, *(1 for _ in range(d.dim() - 2)))
+-    d /= torch.norm(d_reshaped, dim=1, keepdim=True) + 1e-8
+-    return d
+-
+-
+-class VATLoss(nn.Module):
+-    def __init__(self, xi=1e-3, eps=2.5, ip=1):
+-        r"""VAT loss
+-        Source: https://github.com/lyakaap/VAT-pytorch
+-
+-        Arguments:
+-            xi: hyperparameter of VAT in Eq.9, default: 0.0001
+-            eps: hyperparameter of VAT in Eq.9, default: 2.5
+-            ip: iteration times of computing adv noise
+-
+-        Returns:
+-            loss : the VAT Loss
+-
+-        """
+-        super(VATLoss, self).__init__()
+-        self.xi = xi
+-        self.eps = eps
+-        self.ip = ip
+-
+-    def forward(self, model, graph, criterion):
+-        pred = model(graph)
+-        if criterion._get_name() == 'CrossEntropyLoss':
+-            pred = torch.max(pred, dim=1).indices.long().view(-1)
+-
+-        # prepare random unit tensor
+-        nodefea = graph.x
+-        dn = torch.rand(nodefea.shape).sub(0.5).to(nodefea.device)
+-        dn = _l2_normalize(dn)
+-
+-        with _disable_tracking_bn_stats(model):
+-            # calc adversarial direction
+-            with torch.enable_grad():
+-                for _ in range(self.ip):
+-                    dn.requires_grad_()
+-                    x_neighbor = Batch(x=nodefea + self.xi * dn,
+-                                       edge_index=graph.edge_index,
+-                                       y=graph.y,
+-                                       edge_attr=graph.edge_attr,
+-                                       batch=graph.batch)
+-                    pred_hat = model(x_neighbor)
+-                    # logp_hat = F.log_softmax(pred_hat, dim=1)
+-                    # adv_distance = F.kl_div(logp_hat, logp,
+-                    # reduction='batchmean')
+-                    # adv_distance = ((pred - pred_hat) ** 2).sum(
+-                    # axis=0).sqrt()
+-                    adv_distance = criterion(pred_hat, pred)
+-                    # adv_distance.backward()
+-                    # dn = _l2_normalize(dn.grad)
+-                    dn = _l2_normalize(
+-                        torch.autograd.grad(outputs=adv_distance,
+-                                            inputs=dn,
+-                                            retain_graph=True)[0])
+-                    model.zero_grad()
+-                    del x_neighbor, pred_hat, adv_distance
+-
+-            # calc LDS
+-            rn_adv = dn * self.eps
+-            x_adv = Batch(x=nodefea + rn_adv,
+-                          edge_index=graph.edge_index,
+-                          y=graph.y,
+-                          edge_attr=graph.edge_attr,
+-                          batch=graph.batch)
+-            pred_hat = model(x_adv)
+-            lds = criterion(pred_hat, pred)
+-
+-        return lds
++import contextlib
++import torch
++import torch.nn as nn
++import torch.nn.functional as F
++from torch_geometric.data.batch import Batch
++
++
++@contextlib.contextmanager
++def _disable_tracking_bn_stats(model):
++    def switch_attr(m):
++        if hasattr(m, 'track_running_stats'):
++            m.track_running_stats ^= True
++
++    model.apply(switch_attr)
++    yield
++    model.apply(switch_attr)
++
++
++def _l2_normalize(d):
++    d_reshaped = d.view(d.shape[0], -1, *(1 for _ in range(d.dim() - 2)))
++    d /= torch.norm(d_reshaped, dim=1, keepdim=True) + 1e-8
++    return d
++
++
++class VATLoss(nn.Module):
++    def __init__(self, xi=1e-3, eps=2.5, ip=1):
++        r"""VAT loss
++        Source: https://github.com/lyakaap/VAT-pytorch
++
++        Arguments:
++            xi: hyperparameter of VAT in Eq.9, default: 0.0001
++            eps: hyperparameter of VAT in Eq.9, default: 2.5
++            ip: iteration times of computing adv noise
++
++        Returns:
++            loss : the VAT Loss
++
++        """
++        super(VATLoss, self).__init__()
++        self.xi = xi
++        self.eps = eps
++        self.ip = ip
++
++    def forward(self, model, graph, criterion):
++        pred = model(graph)
++        if criterion._get_name() == 'CrossEntropyLoss':
++            pred = torch.max(pred, dim=1).indices.long().view(-1)
++
++        # prepare random unit tensor
++        nodefea = graph.x
++        dn = torch.rand(nodefea.shape).sub(0.5).to(nodefea.device)
++        dn = _l2_normalize(dn)
++
++        with _disable_tracking_bn_stats(model):
++            # calc adversarial direction
++            with torch.enable_grad():
++                for _ in range(self.ip):
++                    dn.requires_grad_()
++                    x_neighbor = Batch(x=nodefea + self.xi * dn,
++                                       edge_index=graph.edge_index,
++                                       y=graph.y,
++                                       edge_attr=graph.edge_attr,
++                                       batch=graph.batch)
++                    pred_hat = model(x_neighbor)
++                    # logp_hat = F.log_softmax(pred_hat, dim=1)
++                    # adv_distance = F.kl_div(logp_hat, logp,
++                    # reduction='batchmean')
++                    # adv_distance = ((pred - pred_hat) ** 2).sum(
++                    # axis=0).sqrt()
++                    adv_distance = criterion(pred_hat, pred)
++                    # adv_distance.backward()
++                    # dn = _l2_normalize(dn.grad)
++                    dn = _l2_normalize(
++                        torch.autograd.grad(outputs=adv_distance,
++                                            inputs=dn,
++                                            retain_graph=True)[0])
++                    model.zero_grad()
++                    del x_neighbor, pred_hat, adv_distance
++
++            # calc LDS
++            rn_adv = dn * self.eps
++            x_adv = Batch(x=nodefea + rn_adv,
++                          edge_index=graph.edge_index,
++                          y=graph.y,
++                          edge_attr=graph.edge_attr,
++                          batch=graph.batch)
++            pred_hat = model(x_adv)
++            lds = criterion(pred_hat, pred)
++
++        return lds
+diff --git a/federatedscope/vertical_fl/__init__.py b/federatedscope/vertical_fl/__init__.py
+index f9458d0..711b90d 100644
+--- a/federatedscope/vertical_fl/__init__.py
++++ b/federatedscope/vertical_fl/__init__.py
+@@ -1 +1 @@
+-from federatedscope.vertical_fl.Paillier.abstract_paillier import *
++from federatedscope.vertical_fl.Paillier.abstract_paillier import *
+diff --git a/federatedscope/vertical_fl/dataloader/dataloader.py b/federatedscope/vertical_fl/dataloader/dataloader.py
+index 09ad261..96265cd 100644
+--- a/federatedscope/vertical_fl/dataloader/dataloader.py
++++ b/federatedscope/vertical_fl/dataloader/dataloader.py
+@@ -1,4 +1,6 @@
+ import numpy as np
++import pandas as pd
++import json
+ 
+ from federatedscope.vertical_fl.dataset import Adult, Abalone, Credit, Blog
+ from federatedscope.core.data.wrap_dataset import WrapDataset
+@@ -10,6 +12,7 @@ VERTICAL_DATASET = {
+     'blog': Blog,
+ }
+ 
++ext_config = json.load(open('config.json', 'r'))
+ 
+ def load_vertical_data(config=None, generate=False):
+     """
+@@ -44,21 +47,62 @@ def load_vertical_data(config=None, generate=False):
+         data = dataset.data
+         return data, config
+     else:
+-        # generate toy data for running a vertical FL example
+-        INSTANCE_NUM = 1000
+-        TRAIN_SPLIT = 0.9
+-
+-        total_dims = config.vertical.dims[-1]
+-        theta = np.random.uniform(low=-1.0, high=1.0, size=(total_dims, 1))
+-        x = np.random.choice([-1.0, 1.0, -2.0, 2.0, -3.0, 3.0],
+-                             size=(INSTANCE_NUM, total_dims))
+-        y = np.asarray([
+-            1.0 if x >= 0 else -1.0
+-            for x in np.reshape(np.matmul(x, theta), -1)
+-        ])
+-
+-        train_num = int(TRAIN_SPLIT * INSTANCE_NUM)
+-        test_data = {'theta': theta, 'x': x[train_num:], 'y': y[train_num:]}
++        if ext_config['dataset'] == 'breast_vertical':
++            data_l = pd.read_csv('../csv_data/breast_vertical_train/breast_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.int64)
++            data_f = pd.read_csv('../csv_data/breast_vertical_train/breast_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'default_credit_vertical':
++            data_l = pd.read_csv('../csv_data/default_credit_vertical_train/default_credit_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.int64)
++            data_f = pd.read_csv('../csv_data/default_credit_vertical_train/default_credit_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'dvisit_vertical':
++            data_l = pd.read_csv('../csv_data/dvisit_vertical_train/dvisit_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.float32)
++            data_f = pd.read_csv('../csv_data/dvisit_vertical_train/dvisit_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'give_credit_vertical':
++            data_l = pd.read_csv(f'../csv_data/give_credit_vertical_train/give_credit_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.int64)
++            data_f = pd.read_csv(f'../csv_data/give_credit_vertical_train/give_credit_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:120000, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'motor_vertical':
++            data_l = pd.read_csv('../csv_data/motor_vertical_train/motor_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.float32)
++            data_f = pd.read_csv('../csv_data/motor_vertical_train/motor_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'student_vertical':
++            data_l = pd.read_csv('../csv_data/student_vertical_train/student_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.float32)
++            data_f = pd.read_csv('../csv_data/student_vertical_train/student_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        elif ext_config['dataset'] == 'vehicle_scale_vertical':
++            data_l = pd.read_csv('../csv_data/vehicle_scale_vertical_train/vehicle_scale_hetero_guest.csv', sep=',')
++            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            y = np.array(data_l.y).astype(np.int64)
++            data_f = pd.read_csv('../csv_data/vehicle_scale_vertical_train/vehicle_scale_hetero_host.csv', sep=',')
++            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
++        else:
++            raise NotImplementedError('Dataset {} is not supported.'.format(ext_config['dataset']))
++        
++        if ext_config['dataset'] == 'give_credit_vertical':
++            data_l = pd.read_csv(f'../csv_data/give_credit_vertical_test/give_credit_hetero_guest.csv', sep=',')
++            xlt = np.array(data_l.iloc[:, 2:]).astype(np.float32)
++            yt = np.array(data_l.y).astype(np.int64)
++            data_f = pd.read_csv(f'../csv_data/give_credit_vertical_test/give_credit_hetero_host.csv', sep=',')
++            xft = np.array(data_f.iloc[:120000, 1:]).astype(np.float32)
++            x = np.concatenate([xlt, xft], axis=1)
++            test_data = {'x': x, 'y': yt}
++        else:
++            x = np.concatenate([xl, xf], axis=1)
++            test_data = {'x': x, 'y': y}
+         data = dict()
+ 
+         # For Server
+@@ -69,17 +113,16 @@ def load_vertical_data(config=None, generate=False):
+ 
+         # For Client #1
+         data[1] = dict()
+-        data[1]['train'] = {'x': x[:train_num, :config.vertical.dims[0]]}
++        data[1]['train'] = {'x': xl, 'y': y}
+         data[1]['val'] = None
+         data[1]['test'] = test_data
+ 
+         # For Client #2
+         data[2] = dict()
+-        data[2]['train'] = {
+-            'x': x[:train_num, config.vertical.dims[0]:],
+-            'y': y[:train_num]
+-        }
++        data[2]['train'] = {'x': xf}
+         data[2]['val'] = None
+         data[2]['test'] = test_data
+ 
++        config.vertical.dims = [xl.shape[1], xf.shape[1]]
++
+         return data, config
+diff --git a/federatedscope/vertical_fl/linear_model/worker/vertical_client.py b/federatedscope/vertical_fl/linear_model/worker/vertical_client.py
+index 0114d5a..49bd0f8 100644
+--- a/federatedscope/vertical_fl/linear_model/worker/vertical_client.py
++++ b/federatedscope/vertical_fl/linear_model/worker/vertical_client.py
+@@ -67,47 +67,59 @@ class vFLClient(Client):
+         if self.own_label:
+             index, input_x, input_y = self.sample_data()
+             self.batch_index = index
++            self.logger.computation_start()
+             u_A = 0.25 * np.matmul(input_x, self.theta) - 0.5 * input_y
+             en_u_A = [self.public_key.encrypt(x) for x in u_A]
++            self.logger.computation_end()
+ 
+-            self.comm_manager.send(
+-                Message(msg_type='encryped_gradient_u',
++            self.logger.communication_start(target_id=-1)
++            client_message = Message(msg_type='encryped_gradient_u',
+                         sender=self.ID,
+                         receiver=[
+                             each for each in self.comm_manager.neighbors
+                             if each != self.server_id
+                         ],
+                         state=self.state,
+-                        content=(self.batch_index, en_u_A)))
++                        content=(self.batch_index, en_u_A))
++            self.comm_manager.send(client_message)
++            self.logger.communication_end(metrics={'byte': client_message.count_bytes()[1]})
+ 
+     def callback_funcs_for_encryped_gradient_u(self, message: Message):
+         index, en_u_A = message.content
+         self.batch_index = index
+         input_x = self.sample_data(index=self.batch_index)
++        self.logger.computation_start()
+         u_B = 0.25 * np.matmul(input_x, self.theta)
+         en_u_B = [self.public_key.encrypt(x) for x in u_B]
+         en_u = np.expand_dims([sum(x) for x in zip(en_u_A, en_u_B)], -1)
+         en_v_B = en_u * input_x
++        self.logger.computation_end()
+ 
+-        self.comm_manager.send(
+-            Message(msg_type='encryped_gradient_v',
++        self.logger.communication_start(target_id=-1)
++        client_message = Message(msg_type='encryped_gradient_v',
+                     sender=self.ID,
+                     receiver=[
+                         each for each in self.comm_manager.neighbors
+                         if each != self.server_id
+                     ],
+                     state=self.state,
+-                    content=(en_u, en_v_B)))
++                    content=(en_u, en_v_B))
++        self.comm_manager.send(client_message)
++        self.logger.communication_end(metrics={'byte': client_message.count_bytes()[1]})
+ 
+     def callback_funcs_for_encryped_gradient_v(self, message: Message):
+         en_u, en_v_B = message.content
+         input_x = self.sample_data(index=self.batch_index)
++        self.logger.computation_start()
+         en_v_A = en_u * input_x
+         en_v = np.concatenate([en_v_B, en_v_A], axis=-1)
++        self.logger.computation_end()
+ 
+-        self.comm_manager.send(
+-            Message(msg_type='encryped_gradient',
++        self.logger.communication_start(target_id=-1)
++        client_message = Message(msg_type='encryped_gradient',
+                     sender=self.ID,
+                     receiver=[self.server_id],
+                     state=self.state,
+-                    content=(len(input_x), en_v)))
++                    content=(len(input_x), en_v))
++        self.comm_manager.send(client_message)
++        self.logger.communication_end(metrics={'byte': client_message.count_bytes()[1]})
+diff --git a/federatedscope/vertical_fl/linear_model/worker/vertical_server.py b/federatedscope/vertical_fl/linear_model/worker/vertical_server.py
+index 2fd34fa..3b49d20 100644
+--- a/federatedscope/vertical_fl/linear_model/worker/vertical_server.py
++++ b/federatedscope/vertical_fl/linear_model/worker/vertical_server.py
+@@ -1,5 +1,7 @@
+ import numpy as np
++import json
+ import logging
++from sklearn.metrics import roc_auc_score
+ 
+ from federatedscope.core.workers import Server
+ from federatedscope.core.message import Message
+@@ -7,7 +9,7 @@ from federatedscope.vertical_fl.Paillier import abstract_paillier
+ from federatedscope.core.auxiliaries.model_builder import get_model
+ 
+ logger = logging.getLogger(__name__)
+-
++ext_config = json.load(open('config.json', 'r'))
+ 
+ class vFLServer(Server):
+     """
+@@ -40,6 +42,7 @@ class vFLServer(Server):
+         self._init_data_related_var()
+ 
+         self.lr = config.train.optimizer.lr
++        self.triggered = False
+ 
+         self.register_handlers('encryped_gradient',
+                                self.callback_funcs_for_encryped_gradient)
+@@ -50,18 +53,24 @@ class vFLServer(Server):
+         self.theta = self.model.state_dict()['fc.weight'].numpy().reshape(-1)
+ 
+     def trigger_for_start(self):
++        if self.triggered == False:
++            self.logger.training_start()
++            self.logger.training_round_start()
++            self.triggered = True
+         if self.check_client_join_in():
+             self.broadcast_public_keys()
+             self.broadcast_client_address()
+             self.trigger_for_feat_engr(self.broadcast_model_para)
+ 
+     def broadcast_public_keys(self):
+-        self.comm_manager.send(
+-            Message(msg_type='public_keys',
++        self.logger.communication_start(target_id=-1)
++        server_message = Message(msg_type='public_keys',
+                     sender=self.ID,
+                     receiver=list(self.comm_manager.get_neighbors().keys()),
+                     state=self.state,
+-                    content=self.public_key))
++                    content=self.public_key)
++        self.comm_manager.send(server_message)
++        self.logger.communication_end(metrics={'byte': server_message.count_bytes()[1]})
+ 
+     def broadcast_model_para(self):
+ 
+@@ -70,22 +79,26 @@ class vFLServer(Server):
+         for client_id in client_ids:
+             theta_slices = self.theta[cur_idx:cur_idx +
+                                       self.dims[int(client_id)]]
+-            self.comm_manager.send(
+-                Message(msg_type='model_para',
++            self.logger.communication_start(target_id=-1)
++            server_message = Message(msg_type='model_para',
+                         sender=self.ID,
+                         receiver=client_id,
+                         state=self.state,
+-                        content=theta_slices))
++                        content=theta_slices)
++            self.comm_manager.send(server_message)
++            self.logger.communication_end(metrics={'byte': server_message.count_bytes()[1]})
+             cur_idx += self.dims[int(client_id)]
+ 
+     def callback_funcs_for_encryped_gradient(self, message: Message):
+         sample_num, en_v = message.content
+ 
++        self.logger.computation_start()
+         v = np.reshape(
+             [self.private_key.decrypt(x) for x in np.reshape(en_v, -1)],
+             [sample_num, -1])
+         avg_gradients = np.mean(v, axis=0)
+         self.theta = self.theta - self.lr * avg_gradients
++        self.logger.computation_end()
+ 
+         self.state += 1
+         if self.state % self._cfg.eval.freq == 0 and self.state != \
+@@ -102,12 +115,21 @@ class vFLServer(Server):
+             logger.info(formatted_logs)
+ 
+         if self.state < self.total_round_num:
++            self.logger.training_round_end()
+             # Move to next round of training
+             logger.info(f'----------- Starting a new training round (Round '
+                         f'#{self.state}) -------------')
++            self.logger.training_round_start()
+             self.broadcast_model_para()
+         else:
+-            metrics = self.evaluate()
++            self.logger.training_round_end()
++            self.logger.training_end()
++            with self.logger.model_evaluation() as e:
++                metrics = self.evaluate()
++                metric = 'loss' if ext_config['dataset'] == 'dvisit_vertical' or ext_config['dataset'] == 'motor_vertical' or ext_config['dataset'] == 'student_vertical' else ('acc' if ext_config['dataset'] == 'vehicle_scale_vertical' else 'roc_auc')
++                target_metric = 'mse' if ext_config['dataset'] == 'dvisit_vertical' or ext_config['dataset'] == 'motor_vertical' or ext_config['dataset'] == 'student_vertical' else ('accuracy' if ext_config['dataset'] == 'vehicle_scale_vertical' else 'auc')
++                e.report_metric(target_metric, float(metrics[f'test_{metric}']))
++                e.report_metric('loss', float(metrics['test_loss']))
+             self._monitor.update_best_result(self.best_results,
+                                              metrics,
+                                              results_type='server_global_eval')
+@@ -117,6 +139,7 @@ class vFLServer(Server):
+                 role='Server #',
+                 forms=self._cfg.eval.report)
+             logger.info(formatted_logs)
++            self.logger.end()
+ 
+     def evaluate(self):
+         test_x = self.data['test']['x']
+@@ -124,5 +147,11 @@ class vFLServer(Server):
+         loss = np.mean(
+             np.log(1 + np.exp(-test_y * np.matmul(test_x, self.theta))))
+         acc = np.mean((test_y * np.matmul(test_x, self.theta)) > 0)
+-
+-        return {'test_loss': loss, 'test_acc': acc, 'test_total': len(test_y)}
++        labels = test_y.reshape(-1).tolist()
++        logits = np.matmul(test_x, self.theta).reshape(-1).tolist()
++        try:
++            auc = roc_auc_score(y_true=labels, y_score=logits)
++        except:
++            auc = 0
++
++        return {'test_loss': loss, 'test_acc': acc, 'test_roc_auc': auc, 'test_total': len(test_y)}

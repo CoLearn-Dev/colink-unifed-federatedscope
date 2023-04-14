@@ -1,5 +1,5 @@
 {
-  "framework": "example",
+  "framework": "federatedscope",
   "algorithm": "fedavg",
   "dataset": "default_credit_horizontal",
   "model": "mlp_128",

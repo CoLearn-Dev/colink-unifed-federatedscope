@@ -7,7 +7,7 @@ from typing import List
 
 import colink as CL
 
-from unifed.frameworks.example.util import store_error, store_return, GetTempFileName, get_local_ip
+from unifed.frameworks.federatedscope.util import store_error, store_return, GetTempFileName, get_local_ip
 
 pop = CL.ProtocolOperator(__name__)
 UNIFED_TASK_DIR = "unifed:task"
@@ -15,33 +15,53 @@ UNIFED_TASK_DIR = "unifed:task"
 def load_config_from_param_and_check(param: bytes):
     unifed_config = json.loads(param.decode())
     framework = unifed_config["framework"]
-    assert framework == "example"
+    assert framework == "federatedscope"
     deployment = unifed_config["deployment"]
     if deployment["mode"] != "colink":
         raise ValueError("Deployment mode must be colink")
     return unifed_config
 
-def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role: str, server_ip: str):
+def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role: str, server_ip: str, config: dict):
     with GetTempFileName() as temp_log_filename, \
         GetTempFileName() as temp_output_filename:
         # note that here, you don't have to create temp files to receive output and log
         # you can also expect the target process to generate files and then read them
 
         # start training procedure
-        process = subprocess.Popen(
-            [
-                "unifed-example-workload",  
-                # takes 4 args: mode(client/server), participant_id, output, and logging destination
-                role,
-                str(participant_id),
-                temp_output_filename,
-                temp_log_filename,
-            ],
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE
-        )
+        if config['dataset'].split('_')[-1] == 'vertical':
+            if role == "client":
+                role_id == "dummy"
+            else:
+                role_id = "vertical"
+        else:
+            role_id = role if role == "server" else f"{role}_{str(participant_id)}"
+        print(role_id, "begin")
+        if role_id == "dummy":
+            process = subprocess.Popen(
+                [
+                    "cd",
+                    ".",
+                ],
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
+        else:
+            process = subprocess.Popen(
+                [
+                    "python",  
+                    # takes 4 args: mode(client/server), participant_id, output, and logging destination
+                    "federatedscope/federatedscope/main.py",
+                    "--cfg",
+                    f"federatedscope/federatedscope/contrib/configs/{role_id}.yaml",
+                    # temp_output_filename,
+                    # temp_log_filename,
+                ],
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE
+            )
         # gather result
         stdout, stderr = process.communicate()
+        print(role_id, "done")
         returncode = process.returncode
         with open(temp_output_filename, "rb") as f:
             output = f.read()
@@ -57,7 +77,7 @@ def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role
         })
 
 
-@pop.handle("unifed.example:server")
+@pop.handle("unifed.federatedscope:server")
 @store_error(UNIFED_TASK_DIR)
 @store_return(UNIFED_TASK_DIR)
 def run_server(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
@@ -68,10 +88,10 @@ def run_server(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
     cl.send_variable("server_ip", server_ip, [p for p in participants if p.role == "client"])
     # run external program
     participant_id = [i for i, p in enumerate(participants) if p.user_id == cl.get_user_id()][0]
-    return run_external_process_and_collect_result(cl, participant_id, "server", server_ip)
+    return run_external_process_and_collect_result(cl, participant_id, "server", server_ip, unifed_config)
 
 
-@pop.handle("unifed.example:client")
+@pop.handle("unifed.federatedscope:client")
 @store_error(UNIFED_TASK_DIR)
 @store_return(UNIFED_TASK_DIR)
 def run_client(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
@@ -83,4 +103,4 @@ def run_client(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
     server_ip = cl.recv_variable("server_ip", p_server).decode()
     # run external program
     participant_id = [i for i, p in enumerate(participants) if p.user_id == cl.get_user_id()][0]
-    return run_external_process_and_collect_result(cl, participant_id, "client", server_ip)
+    return run_external_process_and_collect_result(cl, participant_id, "client", server_ip, unifed_config)
