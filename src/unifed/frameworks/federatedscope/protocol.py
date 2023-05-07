@@ -16,7 +16,7 @@ from unifed.frameworks.federatedscope.util import store_error, store_return, Get
 pop = CL.ProtocolOperator(__name__)
 UNIFED_TASK_DIR = "unifed:task"
 
-def convert_config(server_ip):
+def convert_config(role, server_ip, client_ip):
     config = json.load(open('config.json', 'r'))
     # load dataset
     flbd = flbenchmark.datasets.FLBDatasets('../data')
@@ -192,7 +192,7 @@ distribute:
     use: True
     server_host: '{server_ip}'
     server_port: 50051
-    client_host: '{server_ip}'
+    client_host: '{client_ip}'
     client_port: {50051+client_idx}
     role: 'client'
     data_idx: {client_idx}
@@ -233,7 +233,7 @@ def load_config_from_param_and_check(param: bytes):
         raise ValueError("Deployment mode must be colink")
     return unifed_config
 
-def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role: str, server_ip: str, config: dict):
+def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role: str, server_ip: str, config: dict, client_ip: str):
     # convert config format
     federatedscope_config = copy.deepcopy(config)
     federatedscope_config["training_param"] = federatedscope_config["training"]
@@ -242,7 +242,7 @@ def run_external_process_and_collect_result(cl: CL.CoLink, participant_id,  role
     federatedscope_config["bench_param"] = federatedscope_config["deployment"]
     with open("config.json", "w") as cf:
         json.dump(federatedscope_config, cf)
-    convert_config(server_ip)
+    convert_config(role, server_ip, client_ip)
     with GetTempFileName() as temp_log_filename, \
         GetTempFileName() as temp_output_filename:
         # note that here, you don't have to create temp files to receive output and log
@@ -309,7 +309,7 @@ def run_server(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
     cl.send_variable("server_ip", server_ip, [p for p in participants if p.role == "client"])
     # run external program
     participant_id = [i for i, p in enumerate(participants) if p.user_id == cl.get_user_id()][0]
-    return run_external_process_and_collect_result(cl, participant_id, "server", server_ip, unifed_config)
+    return run_external_process_and_collect_result(cl, participant_id, "server", server_ip, unifed_config, server_ip)
 
 
 @pop.handle("unifed.federatedscope:client")
@@ -322,6 +322,7 @@ def run_client(cl: CL.CoLink, param: bytes, participants: List[CL.Participant]):
     assert len(server_in_list) == 1
     p_server = server_in_list[0]
     server_ip = cl.recv_variable("server_ip", p_server).decode()
+    client_ip = get_local_ip()
     # run external program
     participant_id = [i for i, p in enumerate(participants) if p.user_id == cl.get_user_id()][0]
-    return run_external_process_and_collect_result(cl, participant_id, "client", server_ip, unifed_config)
+    return run_external_process_and_collect_result(cl, participant_id, "client", server_ip, unifed_config, client_ip)
