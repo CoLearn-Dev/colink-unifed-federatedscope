@@ -22,12 +22,7 @@ conda activate colink-unifed-federatedscope
 pip install -e .
 ```
 
-## 4. Install the FederatedScope framework
-
-```bash
-sh install_federatedscope.sh
-```
-## 5. Test the protocol
+## 4. Test the protocol
 
 - The first step is to write a test configuration. You can look into `./test/configs/case_0.json` for an example. Note that for the case you construct, it should mainly serve the purpose of correctness testing (e.g. 1~2 epochs with a small model is usually sufficient). In this way, we can reproduce the correctness testing from a single host.
 
