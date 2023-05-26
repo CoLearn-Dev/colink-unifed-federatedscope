@@ -104,7 +104,7 @@ index 7e5fc24..3b73827 100644
 +:end
 +popd
 diff --git a/federatedscope/contrib/data/load_from_files.py b/federatedscope/contrib/data/load_from_files.py
-index 304ad8a..4d0fce0 100644
+index 304ad8a..e34dff3 100644
 --- a/federatedscope/contrib/data/load_from_files.py
 +++ b/federatedscope/contrib/data/load_from_files.py
 @@ -1,21 +1,96 @@
@@ -135,7 +135,7 @@ index 304ad8a..4d0fce0 100644
 +        y["train"] = []
 +        y["test"] = []
 +        for dir_path in ["train", "test"]:
-+            data_paths = sorted(glob.glob(f'~/flbenchmark.working/csv_data/{ext_config["dataset"]}_{dir_path}/*.csv'))
++            data_paths = sorted(glob.glob(os.path.join(os.path.expanduser('~'), f'flbenchmark.working/data/{ext_config["dataset"]}_{dir_path}/*.csv')))
 +            if dir_path == 'train':
 +                data_paths = data_paths[client_idx-1:client_idx]
 +            for data_path in data_paths:
@@ -159,18 +159,18 @@ index 304ad8a..4d0fce0 100644
 +        client_name = 'guest' if client_idx == 1 else 'host'
 +        if ext_config['dataset'] == 'default_credit_horizontal' and client_idx == 2:
 +            client_name += '_1'
-+        train_data = pd.read_csv(f'~/flbenchmark.working/csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_{client_name}.csv', sep=',')
++        train_data = pd.read_csv(f'~/flbenchmark.working/data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_{client_name}.csv', sep=',')
 +        if ext_config["dataset"] == 'vehicle_scale_horizontal':
 +            train_X = np.array(train_data.iloc[:, 2:]).astype(np.float32)
 +            train_y = np.array(train_data.y).astype(np.int32)
-+            test_data = pd.read_csv(f'~/flbenchmark.working/csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_guest.csv', sep=',')
++            test_data = pd.read_csv(f'~/flbenchmark.working/data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_guest.csv', sep=',')
 +            test_X = np.array(test_data.iloc[:, 2:]).astype(np.float32)
 +            test_y = np.array(test_data.y).astype(np.int32)
-+            test_data = pd.read_csv(f'~/flbenchmark.working/csv_data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_host.csv', sep=',')
++            test_data = pd.read_csv(f'~/flbenchmark.working/data/{ext_config["dataset"]}_train/{ext_config["dataset"].replace("horizontal", "homo")}_host.csv', sep=',')
 +            test_X = np.concatenate((test_X, np.array(test_data.iloc[:, 2:]).astype(np.float32)), axis=0)
 +            test_y = np.concatenate((test_y, np.array(test_data.y).astype(np.int32)), axis=0)
 +        else:
-+            test_data = pd.read_csv(f'~/flbenchmark.working/csv_data/{ext_config["dataset"]}_test/{ext_config["dataset"].replace("horizontal", "homo")}_test.csv', sep=',')
++            test_data = pd.read_csv(f'~/flbenchmark.working/data/{ext_config["dataset"]}_test/{ext_config["dataset"].replace("horizontal", "homo")}_test.csv', sep=',')
 +            if ext_config['dataset'] == 'student_horizontal':
 +                train_X = np.array(pd.concat([train_data.iloc[:, 9:], train_data.iloc[:, 1:8]], axis=1)).astype(np.float32)
 +                train_y = np.array(train_data.y).astype(np.float32).reshape(-1, 1)
@@ -937,7 +937,7 @@ index f9458d0..711b90d 100644
 -from federatedscope.vertical_fl.Paillier.abstract_paillier import *
 +from federatedscope.vertical_fl.Paillier.abstract_paillier import *
 diff --git a/federatedscope/vertical_fl/dataloader/dataloader.py b/federatedscope/vertical_fl/dataloader/dataloader.py
-index 09ad261..c243d0a 100644
+index 09ad261..5ea9e9d 100644
 --- a/federatedscope/vertical_fl/dataloader/dataloader.py
 +++ b/federatedscope/vertical_fl/dataloader/dataloader.py
 @@ -1,4 +1,6 @@
@@ -975,55 +975,55 @@ index 09ad261..c243d0a 100644
 -        train_num = int(TRAIN_SPLIT * INSTANCE_NUM)
 -        test_data = {'theta': theta, 'x': x[train_num:], 'y': y[train_num:]}
 +        if ext_config['dataset'] == 'breast_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/breast_vertical_train/breast_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/breast_vertical_train/breast_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.int64)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/breast_vertical_train/breast_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/breast_vertical_train/breast_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'default_credit_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/default_credit_vertical_train/default_credit_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/default_credit_vertical_train/default_credit_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.int64)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/default_credit_vertical_train/default_credit_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/default_credit_vertical_train/default_credit_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'dvisit_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/dvisit_vertical_train/dvisit_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/dvisit_vertical_train/dvisit_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.float32)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/dvisit_vertical_train/dvisit_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/dvisit_vertical_train/dvisit_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'give_credit_vertical':
-+            data_l = pd.read_csv(f'~/flbenchmark.working/csv_data/give_credit_vertical_train/give_credit_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv(f'~/flbenchmark.working/data/give_credit_vertical_train/give_credit_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.int64)
-+            data_f = pd.read_csv(f'~/flbenchmark.working/csv_data/give_credit_vertical_train/give_credit_hetero_host.csv', sep=',')
++            data_f = pd.read_csv(f'~/flbenchmark.working/data/give_credit_vertical_train/give_credit_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:120000, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'motor_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/motor_vertical_train/motor_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/motor_vertical_train/motor_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.float32)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/motor_vertical_train/motor_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/motor_vertical_train/motor_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'student_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/student_vertical_train/student_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/student_vertical_train/student_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.float32)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/student_vertical_train/student_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/student_vertical_train/student_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        elif ext_config['dataset'] == 'vehicle_scale_vertical':
-+            data_l = pd.read_csv('~/flbenchmark.working/csv_data/vehicle_scale_vertical_train/vehicle_scale_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv('~/flbenchmark.working/data/vehicle_scale_vertical_train/vehicle_scale_hetero_guest.csv', sep=',')
 +            xl = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            y = np.array(data_l.y).astype(np.int64)
-+            data_f = pd.read_csv('~/flbenchmark.working/csv_data/vehicle_scale_vertical_train/vehicle_scale_hetero_host.csv', sep=',')
++            data_f = pd.read_csv('~/flbenchmark.working/data/vehicle_scale_vertical_train/vehicle_scale_hetero_host.csv', sep=',')
 +            xf = np.array(data_f.iloc[:, 1:]).astype(np.float32)
 +        else:
 +            raise NotImplementedError('Dataset {} is not supported.'.format(ext_config['dataset']))
 +        
 +        if ext_config['dataset'] == 'give_credit_vertical':
-+            data_l = pd.read_csv(f'~/flbenchmark.working/csv_data/give_credit_vertical_test/give_credit_hetero_guest.csv', sep=',')
++            data_l = pd.read_csv(f'~/flbenchmark.working/data/give_credit_vertical_test/give_credit_hetero_guest.csv', sep=',')
 +            xlt = np.array(data_l.iloc[:, 2:]).astype(np.float32)
 +            yt = np.array(data_l.y).astype(np.int64)
-+            data_f = pd.read_csv(f'~/flbenchmark.working/csv_data/give_credit_vertical_test/give_credit_hetero_host.csv', sep=',')
++            data_f = pd.read_csv(f'~/flbenchmark.working/data/give_credit_vertical_test/give_credit_hetero_host.csv', sep=',')
 +            xft = np.array(data_f.iloc[:120000, 1:]).astype(np.float32)
 +            x = np.concatenate([xlt, xft], axis=1)
 +            test_data = {'x': x, 'y': yt}
